@@ -1,125 +1,234 @@
-import sqlite3
-try:
-    # Connect to SQLite database (or create it if it doesn't exist)
-    conn = sqlite3.connect('my_database.db')  # 'my_database.db' is the name of the database file
-
-    # Create a cursor object using the cursor() method
-    cursor = conn.cursor()
-
-    # Create table as per requirement
-    sql = '''
-    CREATE TABLE scraped_links (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        url TEXT,
-        source_url TEXT,
-        page INT
-    )'''
-    cursor.execute(sql)
-
-    # Commit your changes in the database
-    conn.commit()
-
-    # Close the connection
-    conn.close()
-except:
-    pass
-
-
-import undetected_chromedriver as uc
-import time
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-import random
-
 import re
+import random
+import time
+import sqlite3
+from bs4 import BeautifulSoup
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+import undetected_chromedriver as uc
+
+# Database setup
+
+
+def setup_database():
+    """
+    Create or connect to the SQLite database and ensure the required table exists.
+    """
+    conn = sqlite3.connect('my_database.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scraped_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT,
+            source_url TEXT,
+            page INT,
+            company TEXT,
+            CEO TEXT,
+            phone TEXT,
+            state INTEGER DEFAULT 0
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# Helper functions
+
 
 def extract_page_number(url):
     """
-    Extracts the page number from a given URL.
+    Extract the page number from a given URL.
 
     Args:
-    url (str): The URL to extract the page number from.
+        url (str): The URL containing the page parameter.
 
     Returns:
-    int or None: The extracted page number as an integer, or None if not found.
+        int: The page number if found, otherwise None.
     """
     match = re.search(r'page=(\d+)', url)
-    if match:
-        return int(match.group(1))
-    else:
-        return None
-def insert(hrefs, source_url, page):
+    return int(match.group(1)) if match else None
+
+
+def insert_links(hrefs, source_url, page):
     """
-    Inserts hrefs into the database with a common source_url and page.
-    
+    Insert scraped links into the database.
+
     Args:
-    database_path (str): Path to the SQLite database file.
-    hrefs (list of str): List of href URLs to be inserted.
-    source_url (str): The source URL associated with the hrefs.
-    page (int): The page number associated with the hrefs.
+        hrefs (list): List of href URLs to insert.
+        source_url (str): The URL of the page the links were scraped from.
+        page (int): The page number of the source URL.
     """
-    # Connect to the SQLite database
     conn = sqlite3.connect('my_database.db')
     cursor = conn.cursor()
-
-    # SQL command to insert data
-    insert_sql = '''
-    INSERT INTO scraped_links (url, source_url, page)
-    VALUES (?, ?, ?)
-    '''
-
-    # Loop through hrefs and execute the insert command for each
-    for href in hrefs:
-        cursor.execute(insert_sql, (href, source_url, page))
-
-    # Commit the changes and close the connection
+    cursor.executemany('''
+        INSERT INTO scraped_links (url, source_url, page)
+        VALUES (?, ?, ?)
+    ''', [(href, source_url, page) for href in hrefs])
     conn.commit()
     conn.close()
 
-# Example usage
-# database_path = 'my_database.db'  # Path to your database file
-# hrefs = ['http://example.com/link1', 'http://example.com/link2', ...]  # Example hrefs
-# source_url = 'http://example.com/source'  # Example source URL
-# page = 1  # Example page number
-# insert(database_path, hrefs, source_url, page)  # Insert data
 
-driver = uc.Chrome(use_subprocess=True)
-driver.get('https://www.zameen.com/agents/Lahore-1/?page=204')
-# Use list comprehension to get the 'href' attribute of each element
-time.sleep(1)
+def update_link(url, company, CEO, phone):
+    """
+    Update the details of a link in the database.
 
-while(True):
-    source_url=driver.current_url
-    page=extract_page_number(source_url)
-    errors=driver.find_elements(By.CLASS_NAME,"errors_errorContainer__1-orG")
-    hrefs=None
-    if len(errors)==0:
-        hrefs = [element.get_attribute('href') for element in driver.find_elements(By.CLASS_NAME,"agent-listing-card_cardListingItem__aX-UY") if element.get_attribute('href') is not None]
-        insert(hrefs,source_url,page)
-    else:
-        driver.get(f'https://www.zameen.com/agents/Lahore-1/?page={page+1}')
-        print(f'error on {page}')
-        time.sleep(3)
-        continue
-
-        
-    # Find the element (replace 'your_element_selector' with the actual selector)
-
-    if page!=228:
-        # Create an ActionChain
-        actions = ActionChains(driver)
-        element_to_scroll_to_and_click = driver.find_element(By.CLASS_NAME,'next')
-        # driver.execute_script("arguments[0].scrollIntoView();", element_to_scroll_to_and_click)
-        # Move to the element and then click
-        time.sleep(random.randint(1,3))
-        actions.move_to_element(element_to_scroll_to_and_click).click().perform()
-        # time.sleep(random.randint(1,2))
-        # actions.click(element_to_scroll_to_and_click).perform()
-        time.sleep(random.randint(5,10))
-        print(page)
-        continue
-    break
+    Args:
+        url (str): The URL of the link to update.
+        company (str): The company name to update.
+        CEO (str): The CEO name to update.
+        phone (str): The phone number to update.
+    """
+    conn = sqlite3.connect('my_database.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE scraped_links
+        SET company = ?, CEO = ?, phone = ?, state = 2
+        WHERE url = ?
+    ''', (company, CEO, phone, url))
+    conn.commit()
+    conn.close()
 
 
-# Print the list of hrefs
-driver.quit()
+def fetch_next_link():
+    """
+    Fetch the next URL with state 0 and mark it as being processed (state 1).
+
+    Returns:
+        str: The URL to process, or None if no unprocessed URLs exist.
+    """
+    conn = sqlite3.connect('my_database.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT url FROM scraped_links
+        WHERE state = 0
+        LIMIT 1
+    ''')
+    row = cursor.fetchone()
+    if row:
+        url = row[0]
+        cursor.execute('''
+            UPDATE scraped_links
+            SET state = 1
+            WHERE url = ?
+        ''', (url,))
+        conn.commit()
+    conn.close()
+    return row[0] if row else None
+
+
+def reset_state():
+    """
+    Reset all links with state 1 back to state 0.
+    """
+    conn = sqlite3.connect('my_database.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE scraped_links
+        SET state = 0
+        WHERE state = 1
+    ''')
+    conn.commit()
+    conn.close()
+
+
+def extract_text_from_html(html_content):
+    """
+    Extract text from HTML content using BeautifulSoup.
+
+    Args:
+        html_content (str): The raw HTML content.
+
+    Returns:
+        str: The extracted text.
+    """
+    soup = BeautifulSoup(html_content, 'html.parser')
+    return soup.get_text(separator=' ', strip=True)
+
+# Web scraping functions
+
+
+def scrape_links():
+    """
+    Scrape agent links from the website and store them in the database.
+    """
+    driver = uc.Chrome(use_subprocess=False)
+    driver.get('https://www.zameen.com/agents/Lahore-1/?page=1')
+    time.sleep(1)
+    while True:
+        hrefs = [
+            element.get_attribute('href')
+            for element in driver.find_elements(By.CLASS_NAME, "agent-listing-card_cardListingItem__aX-UY")
+            if element.get_attribute('href') is not None
+        ]
+        source_url = driver.current_url
+        page = extract_page_number(source_url)
+        insert_links(hrefs, source_url, page)
+
+        if page == 228:
+            break
+
+        next_button = driver.find_element(By.CLASS_NAME, 'next')
+        driver.execute_script("arguments[0].scrollIntoView();", next_button)
+        ActionChains(driver).move_to_element(next_button).click().perform()
+        time.sleep(random.randint(5, 10))
+
+    driver.quit()
+
+
+def scrape_details():
+    """
+    Scrape company, CEO, and phone details from the URLs in the database.
+    """
+    driver = uc.Chrome(use_subprocess=False, headless=True)
+    company_name_class = 'introduction-card_detailHeader__1M_eJ'
+    ceo_name_class = 'staff-card_agentStaffData__1zxZz'
+    call_button_class = 'staff-card_callBtn__188RX'
+    number_class = 'contact-popup_numberchip__24E__'
+
+    while (url := fetch_next_link()) is not None:
+        driver.get(url)
+        time.sleep(random.randint(2, 5))
+
+        try:
+            company = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located(
+                    (By.CLASS_NAME, company_name_class))
+            )
+            company = extract_text_from_html(
+                company.get_attribute('innerHTML'))
+        except TimeoutException:
+            company = None
+
+        try:
+            ceo = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, ceo_name_class))
+            )
+            ceo = extract_text_from_html(ceo.get_attribute('innerHTML'))
+        except TimeoutException:
+            ceo = None
+
+        try:
+            call_button = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located(
+                    (By.CLASS_NAME, call_button_class))
+            )
+            ActionChains(driver).move_to_element(call_button).click().perform()
+            time.sleep(random.randint(2, 5))
+            number = driver.find_element(By.CLASS_NAME, number_class)
+            number = extract_text_from_html(number.get_attribute('innerHTML'))
+        except TimeoutException:
+            number = None
+
+        update_link(url, company, ceo, number)
+        reset_state()
+
+    driver.quit()
+
+
+# Main execution
+if __name__ == "__main__":
+    setup_database()
+    scrape_links()
+    scrape_details()
