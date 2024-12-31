@@ -22,16 +22,13 @@ The script utilizes Selenium with undetected ChromeDriver, BeautifulSoup for HTM
 
 - `selenium`
 - `undetected_chromedriver`
-- `bs4` (BeautifulSoup)
-- `sqlite3`
-- `re`
-- `random`
-- `time`
+- `beautifulsoup4` (BeautifulSoup)
+- `pysqlite3`
 
 Install required packages using pip:
 
 ```bash
-pip install selenium undetected-chromedriver beautifulsoup4
+pip install -r requirements.txt
 ```
 
 ## Usage
@@ -106,12 +103,3 @@ You can modify the following constants and classes to adapt the script for other
 
 - If scraping fails due to CAPTCHA challenges, consider using proxies or headless browser settings.
 - Ensure the website structure has not changed. Update CSS selectors accordingly.
-
-## License
-
-This project is licensed under the MIT License. Feel free to use and modify it as needed.
-
-## Author
-
-[Your Name]  
-[Your Contact Information]
